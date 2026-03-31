@@ -75,11 +75,22 @@ def fetch_image_crop(
 
     # calculate crop bounds
     # use the projection of the first non-None stac item
+    # calculate crop bounds
+    # use the projection of the first non-None stac item
     stac_items_not_none = [item for item in stac_items if item is not None]
-    crs = stac_items_not_none[0].properties["proj:epsg"]
+
+    first = stac_items_not_none[0]
+    crs = first.properties.get("proj:epsg")
+    if crs is None:
+        code = first.properties.get("proj:code")  # e.g. "EPSG:32644"
+        if isinstance(code, str) and code.upper().startswith("EPSG:"):
+            crs = int(code.split(":")[1])
+
+    # final fallback
+    crs = crs or 3857
 
     proj_latlon_to_stac = pyproj.Transformer.from_crs(4326, crs, always_xy=True)
-    buffer_distance = image_width // 2 + 1
+    buffer_distance = (image_width // 2) * resolution
     x_utm, y_utm = proj_latlon_to_stac.transform(lon, lat)
     x_min, x_max = x_utm - buffer_distance, x_utm + buffer_distance
     y_min, y_max = y_utm - buffer_distance, y_utm + buffer_distance
@@ -91,11 +102,11 @@ def fetch_image_crop(
             stac_items_not_none,
             assets=bands,
             resolution=resolution,
-            rescale=True,
-            dtype=dtype,
+            rescale=False,
+            dtype="float64",
             epsg=crs,  # set common projection for all images
             bounds=[x_min, y_min, x_max, y_max],
-            fill_value=0,
+            fill_value=np.nan,
         )
         image = xarray.median(dim="time").values
 
@@ -106,18 +117,20 @@ def fetch_image_crop(
                 item,
                 assets=bands,
                 resolution=resolution,
-                rescale=True,
-                dtype=dtype,
+                rescale=False,
+                dtype="float64",
+                epsg=crs,
                 bounds=[x_min, y_min, x_max, y_max],
-                fill_value=0,
+                fill_value=np.nan,
             )
             image = xarray.values
             if len(image.shape) > 3:
                 image = image.squeeze(0)
 
             # if image is not all zeros, break and use this image
-            if ~np.all(image == 0.0):
+            if not np.all(np.isnan(image)):
                 break
+
             else:
                 # check next image if there are any stac items left
                 if i < len(stac_items_not_none) - 1:
