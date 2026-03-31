@@ -97,7 +97,13 @@ def _get_trimmed_stac_shapes_gdf(item_collection: ItemCollection) -> gpd.GeoData
 
     rows_list = []
     for i, item in enumerate(item_collection):
-        stac_crs = item.properties["proj:epsg"]
+        stac_crs = item.properties.get("proj:epsg")
+        if stac_crs is None:
+            code = item.properties.get("proj:code")
+            if isinstance(code, str) and code.upper().startswith("EPSG:"):
+                stac_crs = int(code.split(":")[1])
+            else:
+                stac_crs = 4326
 
         # get STAC geometry
         stac_geom = shapely.geometry.shape(item.geometry)
