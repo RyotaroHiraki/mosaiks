@@ -112,7 +112,14 @@ def _get_trimmed_stac_shapes_gdf(item_collection: ItemCollection) -> gpd.GeoData
         stac_geom = shapely.geometry.shape(item.geometry)
 
         # convert proj:bbox to polygon
-        x_min_p, y_min_p, x_max_p, y_max_p = item.properties["proj:bbox"]
+        proj_bbox = item.properties.get("proj:bbox")
+
+        if proj_bbox is None:
+        # bbox無いならそのままgeometry使う
+            trimmed_geom = stac_geom
+        else:
+            x_min_p, y_min_p, x_max_p, y_max_p = proj_bbox
+
         image_bbox = shapely.geometry.Polygon(
             [
                 [x_min_p, y_min_p],
@@ -121,12 +128,14 @@ def _get_trimmed_stac_shapes_gdf(item_collection: ItemCollection) -> gpd.GeoData
                 [x_max_p, y_min_p],
             ]
         )
-        # convert to EPSG:4326 (to match STAC geometry)
+
         image_bbox = (
-            gpd.GeoSeries(image_bbox).set_crs(stac_crs).to_crs(4326).geometry[0]
+            gpd.GeoSeries(image_bbox)
+            .set_crs(stac_crs)
+            .to_crs(4326)
+            .geometry[0]
         )
 
-        # trim stac_geom to only what's inside bbox
         trimmed_geom = stac_geom.intersection(image_bbox)
 
         row_data = {
