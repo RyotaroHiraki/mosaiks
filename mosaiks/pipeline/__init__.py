@@ -8,7 +8,6 @@ from dask.distributed import Client
 import mosaiks.checks as checks
 import mosaiks.utils as utl
 from mosaiks.featurize import RCF
-from mosaiks.pipeline.parallel import run_parallel_pipeline
 from mosaiks.pipeline.standard import run_pipeline
 
 # Rasterio variables
@@ -132,6 +131,7 @@ def get_features(
             return_df=True,
         )
     else:
+        from mosaiks.pipeline.parallel import run_parallel_pipeline
         return run_parallel_pipeline(
             points_gdf=points_gdf,
             model=model,
