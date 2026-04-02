@@ -146,7 +146,7 @@ def _get_trimmed_stac_shapes_gdf(item_collection: ItemCollection) -> gpd.GeoData
         row = gpd.GeoDataFrame(row_data, crs=4326)
         rows_list.append(row)
 
-    return pd.concat(rows_list)
+    return pd.concat(rows_list, ignore_index=True)
 
 
 def _add_overlapping_stac_items(
