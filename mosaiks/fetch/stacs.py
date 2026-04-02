@@ -8,8 +8,10 @@ import pystac_client
 import shapely
 from pystac.item import Item
 from pystac.item_collection import ItemCollection
+import planetary_computer as pc
 
 __all__ = ["fetch_image_refs", "fetch_stac_item_from_id"]
+
 
 
 def fetch_image_refs(
@@ -57,6 +59,7 @@ def fetch_image_refs(
             limit=500,  # this limit seems arbitrary
         )
         item_collection = search_results.item_collection()
+        item_collection = pc.sign(item_collection)
 
         if len(item_collection) == 0:
             return points_gdf_with_stac
