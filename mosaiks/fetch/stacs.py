@@ -120,23 +120,23 @@ def _get_trimmed_stac_shapes_gdf(item_collection: ItemCollection) -> gpd.GeoData
         else:
             x_min_p, y_min_p, x_max_p, y_max_p = proj_bbox
 
-        image_bbox = shapely.geometry.Polygon(
-            [
-                [x_min_p, y_min_p],
-                [x_min_p, y_max_p],
-                [x_max_p, y_max_p],
-                [x_max_p, y_min_p],
-            ]
-        )
+            image_bbox = shapely.geometry.Polygon(
+                [
+                    [x_min_p, y_min_p],
+                    [x_min_p, y_max_p],
+                    [x_max_p, y_max_p],
+                [    x_max_p, y_min_p],
+                ]
+            )
 
-        image_bbox = (
-            gpd.GeoSeries(image_bbox)
-            .set_crs(stac_crs)
-            .to_crs(4326)
-            .geometry[0]
-        )
+            image_bbox = (
+                gpd.GeoSeries(image_bbox)
+                .set_crs(stac_crs)
+                .to_crs(4326)
+                .geometry[0]
+            )
 
-        trimmed_geom = stac_geom.intersection(image_bbox)
+            trimmed_geom = stac_geom.intersection(image_bbox)
 
         row_data = {
             "eo:cloud_cover": [item.properties["eo:cloud_cover"]],
@@ -229,6 +229,6 @@ def fetch_stac_item_from_id(
             if id is not None:
                 stac_item_list = list(stac_api.search(ids=id).items())
                 if len(stac_item_list) > 0:
-                    search_results[i] = stac_item_list[0]
+                    search_results[i] = pc.sign(stac_item_list[0])
 
     return search_results
