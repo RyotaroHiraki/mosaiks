@@ -83,7 +83,7 @@ def fetch_image_crop(
                 assets=bands,
                 resolution=resolution,
                 rescale=False,
-                dtype="float64",
+                dtype=dtype,
                 epsg=crs,
                 bounds=bounds,
                 fill_value=np.nan,
@@ -103,7 +103,7 @@ def fetch_image_crop(
                     assets=bands,
                     resolution=resolution,
                     rescale=False,
-                    dtype="float64",
+                    dtype=dtype,
                     epsg=crs,
                     bounds=bounds,
                     fill_value=np.nan,
@@ -113,7 +113,7 @@ def fetch_image_crop(
                 if len(image.shape) > 3:
                     image = image.squeeze(0)
 
-                if not np.all(np.isnan(image)):
+                if (not np.all(np.isnan(image))) and (not np.all(image == 0)):
                     break
 
             except Exception as e:
@@ -138,8 +138,23 @@ def fetch_image_crop(
 
 
 def _minmax_normalize_image(image: np.array) -> np.array:
-    img_min, img_max = image.min(), image.max()
-    return (image - img_min) / (img_max - img_min)
+    if np.all(np.isnan(image)):
+        return np.ones_like(image) * np.nan
+
+    img_min = np.nanmin(image)
+    img_max = np.nanmax(image)
+
+    if not np.isfinite(img_min) or not np.isfinite(img_max):
+        return np.ones_like(image) * np.nan
+
+    if img_max == img_min:
+        out = np.zeros_like(image, dtype=float)
+        out[np.isnan(image)] = np.nan
+        return out
+
+    out = (image - img_min) / (img_max - img_min)
+    out[np.isnan(image)] = np.nan
+    return out
 
 
 def create_data_loader(
@@ -258,7 +273,7 @@ class CustomDataset(Dataset):
 
             # if all 0s, replace with NaNs
             if torch.all(torch_image == 0):
-                torch_image = np.ones_like(torch_image) * np.nan
+                torch_image = torch.full_like(torch_image, float("nan"))
             return torch_image
 
         except Exception as e:
