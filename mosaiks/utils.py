@@ -106,36 +106,22 @@ def make_result_df(
     context_gdf: gpd.GeoDataFrame,
     mosaiks_col_names: list[str],
 ) -> pd.DataFrame:
-    """
-    Takes the features array and returns a dataframe with mosaiks features in the
-    columns, plus the stac_id, with the same index as the context GeoDataFrame.
-
-    Parameters
-    -----------
-    features : Array of features.
-    context_gdf : GeoDataFrame of context variables. Must have the same index size as
-        the features array. Must also have a "stac_item" column which contains
-        pystac.item.Item objects since the "stac_id" is always saved.
-    mosaiks_col_names : List of column names to label the feature columns as.
-
-    Returns
-    --------
-    DataFrame
-    """
-    # Make features dataframe
     features_df = pd.DataFrame(
         data=features, index=context_gdf.index, columns=mosaiks_col_names
     )
 
-    # Add stac_id to features dataframe
-    if isinstance(context_gdf["stac_item"].iloc[0], list):
+    first_nonnull = next((x for x in context_gdf["stac_item"] if x is not None), None)
+
+    if isinstance(first_nonnull, list):
         features_df["stac_id"] = context_gdf["stac_item"].map(
             lambda item_list: [
-                item.id if item is not None else None for item in item_list
+                item.id if item is not None else None
+                for item in (item_list or [])
             ]
         )
     else:
         features_df["stac_id"] = context_gdf["stac_item"].map(
             lambda item: item.id if item is not None else None
         )
+
     return features_df
