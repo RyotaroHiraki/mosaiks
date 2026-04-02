@@ -31,115 +31,105 @@ def fetch_image_crop(
     image_width: int,
     bands: List[str],
     resolution: int,
-    dtype: str = "int16",
+    dtype: str = "float64",
     image_composite_method: str = "least_cloudy",
     normalise: bool = True,
 ) -> np.array:
     """
     Fetches a crop of satellite imagery referenced by the given STAC item(s),
     centered around the given point and with the given image_width.
-
-    If multiple STAC items are given, the median composite of the images is returned.
-
-    Parameters
-    ----------
-    lon : Longitude of the centerpoint to fetch imagery for
-    lat : Latitude of the centerpoint to fetch imagery for
-    stac_items : list of STAC Items to fetch imagery for.
-    image_width : Desired width of the image to be fetched (in meters).
-        A buffer of image_width / 2 will be taken around the centerpoint.
-    bands : List of bands to fetch
-    resolution : Resolution of the image to fetch
-    dtype : Data type of the image to fetch. Defaults to "int16".
-        NOTE - np.uint8 results in loss of signal in the features
-        and np.uint16 is not supported by PyTorch.
-    image_composite_method : The type of composite to make if multiple images are given.
-        If "least_cloudy"", take the least cloudy non-0 image. If "all", take a median
-        composite of all images. Defaults to "least_cloudy"
-    normalise : Whether to normalise the image. Defaults to True.
-
-    Returns
-    -------
-    image : numpy array of shape (C, H, W)
     """
-    if stac_items is None or all(x is None for x in stac_items):
-        size = (
-            len(bands),
-            math.ceil(image_width / resolution + 1),
-            math.ceil(image_width / resolution + 1),
-        )
+
+    size = (
+        len(bands),
+        math.ceil(image_width / resolution + 1),
+        math.ceil(image_width / resolution + 1),
+    )
+
+    if stac_items is None:
         return np.ones(size) * np.nan
 
-    # Stac item must always be a list
     assert isinstance(stac_items, list)
 
-    # calculate crop bounds
-    # use the projection of the first non-None stac item
-    # calculate crop bounds
-    # use the projection of the first non-None stac item
+    # ③ None を除外
     stac_items_not_none = [item for item in stac_items if item is not None]
+    if len(stac_items_not_none) == 0:
+        return np.ones(size) * np.nan
 
-    first = stac_items_not_none[0]
-    crs = first.properties.get("proj:epsg")
-    if crs is None:
-        code = first.properties.get("proj:code")  # e.g. "EPSG:32644"
-        if isinstance(code, str) and code.upper().startswith("EPSG:"):
-            crs = int(code.split(":")[1])
+    def get_item_crs(item):
+        crs = item.properties.get("proj:epsg")
+        if crs is None:
+            code = item.properties.get("proj:code")
+            if isinstance(code, str) and code.upper().startswith("EPSG:"):
+                crs = int(code.split(":")[1])
+        return crs or 3857
 
-    # final fallback
-    crs = crs or 3857
+    def get_bounds(item):
+        crs = get_item_crs(item)
+        transformer = pyproj.Transformer.from_crs(4326, crs, always_xy=True)
+        buffer_distance = (image_width // 2) * resolution
+        x_utm, y_utm = transformer.transform(lon, lat)
+        x_min, x_max = x_utm - buffer_distance, x_utm + buffer_distance
+        y_min, y_max = y_utm - buffer_distance, y_utm + buffer_distance
+        return crs, [x_min, y_min, x_max, y_max]
 
-    proj_latlon_to_stac = pyproj.Transformer.from_crs(4326, crs, always_xy=True)
-    buffer_distance = (image_width // 2) * resolution
-    x_utm, y_utm = proj_latlon_to_stac.transform(lon, lat)
-    x_min, x_max = x_utm - buffer_distance, x_utm + buffer_distance
-    y_min, y_max = y_utm - buffer_distance, y_utm + buffer_distance
-
-    # remove the time dimension
     if image_composite_method == "all":
-        # for a composite over all images, take median pixel over time
-        xarray = stackstac.stack(
-            stac_items_not_none,
-            assets=bands,
-            resolution=resolution,
-            rescale=False,
-            dtype="float64",
-            epsg=crs,  # set common projection for all images
-            bounds=[x_min, y_min, x_max, y_max],
-            fill_value=np.nan,
-        )
-        image = xarray.median(dim="time").values
+        first = stac_items_not_none[0]
+        crs, bounds = get_bounds(first)
 
-    elif image_composite_method == "least_cloudy":
-        # for least cloudy, take the first non zero image
-        for i, item in enumerate(stac_items_not_none):
+        try:
             xarray = stackstac.stack(
-                item,
+                stac_items_not_none,
                 assets=bands,
                 resolution=resolution,
                 rescale=False,
                 dtype="float64",
                 epsg=crs,
-                bounds=[x_min, y_min, x_max, y_max],
+                bounds=bounds,
                 fill_value=np.nan,
             )
-            image = xarray.values
-            if len(image.shape) > 3:
-                image = image.squeeze(0)
+            image = xarray.median(dim="time").values
+        except Exception as e:
+            logging.warning(f"Failed composite for point {lon}, {lat}: {e}")
+            return np.ones(size) * np.nan
 
-            # if image is not all zeros, break and use this image
-            if not np.all(np.isnan(image)):
-                break
+    elif image_composite_method == "least_cloudy":
+        for i, item in enumerate(stac_items_not_none):
+            crs, bounds = get_bounds(item)
 
-            else:
-                # check next image if there are any stac items left
-                if i < len(stac_items_not_none) - 1:
-                    pass
-                else:
-                    logging.warning(
-                        f"All images in the stack are zero for point {lon}, {lat}"
-                    )
-                    return np.ones_like(image) * np.nan
+            try:
+                xarray = stackstac.stack(
+                    item,
+                    assets=bands,
+                    resolution=resolution,
+                    rescale=False,
+                    dtype="float64",
+                    epsg=crs,
+                    bounds=bounds,
+                    fill_value=np.nan,
+                )
+                image = xarray.values
+
+                if len(image.shape) > 3:
+                    image = image.squeeze(0)
+
+                if not np.all(np.isnan(image)):
+                    break
+
+            except Exception as e:
+                logging.warning(
+                    f"Skipping item {i} for point {lon}, {lat}: {e}"
+                )
+                continue
+        else:
+            logging.warning(f"All images in the stack failed for point {lon}, {lat}")
+            return np.ones(size) * np.nan
+
+    else:
+        raise ValueError(
+            f"image_composite_method must be 'least_cloudy' or 'all', "
+            f"not {image_composite_method}"
+        )
 
     if normalise:
         image = _minmax_normalize_image(image)
@@ -205,7 +195,7 @@ class CustomDataset(Dataset):
         image_width: int,
         bands: List[str],
         resolution: int,
-        dtype: str = "int16",
+        dtype: str = "float64",
         image_composite_method: str = "least_cloudy",
     ) -> None:
         """
@@ -286,7 +276,7 @@ def fetch_image_crop_from_stac_id(
     image_width: int,
     bands: List[str],
     resolution: int,
-    dtype: str = "int16",
+    dtype: str = "float16",
     image_composite_method: str = "least_cloudy",
     normalise: bool = True,
     stac_api_name: str = "planetary-compute",
