@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List, Optional
 
 import dask.delayed
-import dask_geopandas as dask_gpd
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -14,6 +13,7 @@ from dask.distributed import Client, LocalCluster, as_completed
 
 import mosaiks.utils as utl
 from mosaiks.pipeline.standard import run_pipeline
+
 
 __all__ = [
     "run_parallel_pipeline",
@@ -73,7 +73,7 @@ def run_parallel_pipeline(
     --------
     DataFrame
     """
-
+    import dask_geopandas as dask_gpd
     # create a temporary directory
     date_time_now = dt.now().strftime("%Y-%m-%d_%H-%M-%S")
     temp_dir = Path.cwd() / f"dask_{date_time_now}"
